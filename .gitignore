@@ -63,3 +63,9 @@ htmlcov/
 .coverage
 .coverage.*
 .pytest_cache/
+
+# Images
+*.jpg
+*.jpeg
+*.png
+*.gif
