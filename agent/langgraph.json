@@ -1,0 +1,11 @@
+{
+  "python_version": "3.11",
+  "dependencies": ["."],
+  "graphs": {
+    "music_store": "src.agent:graph"
+  },
+  "auth": {
+    "path": "src.auth:auth"
+  },
+  "env": ".env"
+}
