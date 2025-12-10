@@ -1,0 +1,1 @@
+- use exa as the default websearch
