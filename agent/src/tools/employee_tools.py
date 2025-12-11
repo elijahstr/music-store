@@ -1,6 +1,7 @@
 """Tools for employee queries. No auth checks - agent-level auth only."""
 
 from langchain_core.tools import tool
+from langgraph.types import interrupt
 from ..db import get_db
 
 
@@ -150,7 +151,22 @@ def edit_invoice(invoice_id: int, new_total: float) -> str:
         old_total = row['Total']
         customer_name = f"{row['FirstName']} {row['LastName']}"
 
-        # Perform the update
+    # Request manager approval BEFORE making changes
+    approval = interrupt({
+        "type": "manager_approval",
+        "action": "edit_invoice",
+        "invoice_id": invoice_id,
+        "customer_name": customer_name,
+        "old_total": float(old_total),
+        "new_total": new_total,
+        "message": f"Approve editing Invoice #{invoice_id} for {customer_name}?\nChange: ${old_total:.2f} -> ${new_total:.2f}"
+    })
+
+    if not approval or not approval.get("approved", False):
+        return f"Edit of Invoice #{invoice_id} was not approved. No changes made."
+
+    # Approved - now perform the update
+    with get_db() as conn:
         conn.execute(
             "UPDATE invoices SET Total = ? WHERE InvoiceId = ?",
             (new_total, invoice_id)
@@ -185,14 +201,32 @@ def delete_invoice(invoice_id: int) -> str:
             return f"Invoice #{invoice_id} not found."
 
         customer_name = f"{row['FirstName']} {row['LastName']}"
+        total = row['Total']
+        invoice_date = row['InvoiceDate']
 
+    # Request manager approval BEFORE deleting
+    approval = interrupt({
+        "type": "manager_approval",
+        "action": "delete_invoice",
+        "invoice_id": invoice_id,
+        "customer_name": customer_name,
+        "total": float(total),
+        "invoice_date": str(invoice_date),
+        "message": f"Approve deleting Invoice #{invoice_id} for {customer_name}?\nAmount: ${total:.2f}, Date: {invoice_date}"
+    })
+
+    if not approval or not approval.get("approved", False):
+        return f"Deletion of Invoice #{invoice_id} was not approved. No changes made."
+
+    # Approved - now perform the deletion
+    with get_db() as conn:
         # Delete line items first (foreign key constraint)
         conn.execute("DELETE FROM invoice_items WHERE InvoiceId = ?", (invoice_id,))
         # Delete invoice
         conn.execute("DELETE FROM invoices WHERE InvoiceId = ?", (invoice_id,))
         conn.commit()
 
-    return f"Invoice #{invoice_id} for {customer_name} (${row['Total']:.2f}, {row['InvoiceDate']}) has been deleted."
+    return f"Invoice #{invoice_id} for {customer_name} (${total:.2f}, {invoice_date}) has been deleted."
 
 
 # Tools that require human-in-the-loop approval

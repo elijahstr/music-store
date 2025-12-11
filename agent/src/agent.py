@@ -1,6 +1,7 @@
 """Main graph composition for the music store multi-agent system."""
 
-from langgraph.graph import StateGraph, START
+from typing import Literal
+from langgraph.graph import StateGraph, START, END
 
 from .state import AgentState
 from .nodes import (
@@ -22,14 +23,27 @@ def create_graph():
     builder.add_node("employee_agent", employee_agent_node)
     builder.add_node("recommendation_agent", recommendation_agent_node)
 
-    # Entry point - always start with supervisor
+    # Entry point
     builder.add_edge(START, "supervisor")
 
-    # Supervisor can route to any agent or end
-    # (routing is handled by Command in supervisor_node)
+    # Supervisor routes to agents or ends
+    # Note: Command(goto=...) in supervisor_node handles actual runtime routing
+    # These edges are for visualization only
+    def supervisor_route(state: AgentState) -> Literal["customer_agent", "employee_agent", "recommendation_agent", "__end__"]:
+        """Placeholder for visualization - actual routing done by Command in node."""
+        return "__end__"
 
-    # All agents route back to supervisor after completing
-    # (routing is handled by Command in each agent node)
+    builder.add_conditional_edges(
+        "supervisor",
+        supervisor_route,
+        ["customer_agent", "employee_agent", "recommendation_agent", END]
+    )
+
+    # Agents return to supervisor
+    # Note: Command(goto="supervisor") in each agent handles actual routing
+    builder.add_edge("customer_agent", "supervisor")
+    builder.add_edge("employee_agent", "supervisor")
+    builder.add_edge("recommendation_agent", "supervisor")
 
     # Compile without checkpointer - LangGraph Platform handles persistence
     return builder.compile()

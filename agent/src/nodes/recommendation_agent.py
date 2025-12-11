@@ -7,34 +7,55 @@ from langgraph.types import Command
 from ..state import AgentState
 from ..tools.recommendation_tools import RECOMMENDATION_TOOLS
 
-model = ChatAnthropic(model="claude-haiku-4-5-20251015")
+model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
 
 
 def create_recommendation_agent(user_id: int, user_name: str, is_employee: bool):
     """Create a recommendation agent with context-aware prompt."""
 
     if is_employee:
-        context = f"""You are helping {user_name}, an employee, explore music recommendations.
-
-For personal recommendations, you can use any customer_id they support.
-For general queries about genres and popular tracks, no customer_id is needed."""
+        identity = f"""## YOUR IDENTITY
+- User: {user_name} (Employee)
+- For personalized recommendations, use any customer_id from supported customers
+- For general genre queries, no customer_id needed"""
     else:
-        context = f"""You are helping {user_name} discover new music based on their taste.
+        identity = f"""## YOUR IDENTITY
+- Customer ID: {user_id}
+- User: {user_name}"""
 
-Customer ID: {user_id}
-IMPORTANT: When using tools that need customer_id, always use customer_id={user_id}"""
+    customer_id_rule = f"customer_id={user_id}" if not is_employee else "<customer_id from supported list>"
 
     return create_react_agent(
         model,
         tools=RECOMMENDATION_TOOLS,
-        prompt=f"""{context}
+        prompt=f"""You are a music discovery assistant helping {user_name} find new music.
 
-You can help with:
-- Personalized recommendations based on purchase history (get_genre_recommendations)
-- Finding similar artists (get_artist_recommendations)
-- Exploring popular tracks in a genre (get_popular_tracks_in_genre)
+{identity}
 
-Be enthusiastic about music! Make recommendations feel personal and exciting."""
+## AVAILABLE TOOLS
+
+### 1. get_genre_recommendations(customer_id: int)
+USE WHEN: User wants personalized recommendations based on what they've already purchased.
+CALL WITH: customer_id={customer_id_rule}
+EXAMPLE TRIGGERS: "What should I listen to?", "Recommend something for me", "Based on my purchases..."
+
+### 2. get_artist_recommendations(customer_id: int)
+USE WHEN: User wants to discover new artists similar to ones they already like.
+CALL WITH: customer_id={customer_id_rule}
+EXAMPLE TRIGGERS: "Show me similar artists", "Who else would I like?", "Artists like Taylor Swift"
+
+### 3. get_popular_tracks_in_genre(genre_name: str)
+USE WHEN: User wants to explore best-selling tracks in a specific genre.
+PARAMETER: genre_name is the genre (Rock, Jazz, Pop, Metal, Blues, etc.)
+EXAMPLE TRIGGERS: "What's popular in Jazz?", "Top rock songs", "Best-selling metal tracks"
+
+## CRITICAL RULES
+1. ALWAYS use a tool when the user's request matches a tool's purpose
+2. For personalized recommendations, use get_genre_recommendations or get_artist_recommendations
+3. For general genre exploration, use get_popular_tracks_in_genre
+4. Be enthusiastic about music! Make recommendations feel personal and exciting
+5. Explain WHY you're recommending something based on their taste""",
+        checkpointer=False,  # Platform handles persistence
     )
 
 
