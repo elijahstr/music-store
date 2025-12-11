@@ -2,6 +2,7 @@
 
 import asyncio
 from langgraph_sdk import Auth
+from langgraph_sdk.auth import is_studio_user
 from .db import get_db
 
 auth = Auth()
@@ -66,11 +67,18 @@ async def authenticate(authorization: str | None) -> Auth.types.MinimalUserDict:
     For this demo, token is the user's first name (julia, jake, neil).
     In production, this would validate a real JWT/session token.
     """
+    # Allow Studio access in dev mode (no authorization provided)
     if not authorization:
-        raise Auth.exceptions.HTTPException(
-            status_code=401,
-            detail="Missing authorization header"
-        )
+        # Return a default employee user for Studio/dev access
+        return {
+            "identity": "studio",
+            "role": "employee",
+            "employee_id": 9,  # Julia's ID for demo purposes
+            "user_id": 9,
+            "name": "Studio User",
+            "supported_customers": [60, 61],  # Jake and Neil
+            "permissions": ["employee:read", "employee:write", "customer:read"],
+        }
 
     # Extract token from "Bearer <token>" format
     token = authorization.replace("Bearer ", "").strip().lower()
@@ -91,6 +99,10 @@ async def authenticate(authorization: str | None) -> Auth.types.MinimalUserDict:
 @auth.on
 async def add_owner_metadata(ctx: Auth.types.AuthContext, value: dict):
     """Add owner metadata to resources for filtering."""
+    # Allow Studio users full access without filters
+    if is_studio_user(ctx.user):
+        return {}
+
     metadata = value.setdefault("metadata", {})
     # Handle both dict (custom auth) and StudioUser (studio mode) types
     if hasattr(ctx.user, "identity"):

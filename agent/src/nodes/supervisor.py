@@ -6,30 +6,50 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 from ..state import AgentState
 
-model = ChatAnthropic(model="claude-opus-4-5-20250929")
+model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
 
 ROUTING_PROMPT = """You are a supervisor routing requests for a music store assistant system.
 
-User Information:
+## USER CONTEXT
 - Name: {user_name}
 - Role: {role}
 - {role_context}
 
-Review the conversation and decide what to do next:
+## AGENT CAPABILITIES
 
-AGENTS:
-- "customer_agent": For viewing personal invoices, purchase history, account information
-- "employee_agent": For employee info, viewing/managing supported customers, editing invoices
-- "recommendation_agent": For music recommendations, discovering new artists, genre exploration
-- "FINISH": When the user's request has been fully answered
+### customer_agent (CUSTOMERS ONLY)
+Route here when user asks about:
+- Their invoices, orders, billing ("show my invoices", "what have I ordered")
+- Their purchase history, music library ("what have I bought", "my purchases")
+- Searching for music ("find songs by...", "search for...")
+- Buying tracks or albums ("purchase", "buy")
 
-RULES:
-- Customers can ONLY use: customer_agent, recommendation_agent
-- Employees can ONLY use: employee_agent, recommendation_agent
-- If an agent has already provided a complete answer, output FINISH
-- For greetings or simple questions, output FINISH
+### employee_agent (EMPLOYEES ONLY)
+Route here when user asks about:
+- Their employee profile ("my profile", "my info", "who is my manager")
+- Customers they support ("which customers", "my customers")
+- Viewing customer invoices ("show invoices for customer X")
+- Editing or deleting invoices ("edit invoice", "delete invoice", "change invoice")
 
-Respond with ONLY the agent name (customer_agent, employee_agent, recommendation_agent, or FINISH)."""
+### recommendation_agent (ALL USERS)
+Route here when user asks about:
+- Music recommendations ("recommend something", "what should I listen to")
+- Discovering new artists ("similar artists", "who else would I like")
+- Popular tracks in genres ("top rock songs", "popular jazz tracks")
+
+### FINISH
+Output FINISH when:
+- An agent has already provided a complete answer (check recent AI messages)
+- The user just said hello/thanks (simple greetings)
+- The request was fully handled in previous messages
+
+## ROUTING RULES
+1. Customers can ONLY use: customer_agent, recommendation_agent
+2. Employees can ONLY use: employee_agent, recommendation_agent
+3. Check if recent messages already contain a complete answer -> FINISH
+4. When in doubt, route to the role's primary agent (customer_agent or employee_agent)
+
+Respond with ONLY ONE of: customer_agent, employee_agent, recommendation_agent, FINISH"""
 
 
 async def supervisor_node(state: AgentState, config: RunnableConfig) -> Command:
