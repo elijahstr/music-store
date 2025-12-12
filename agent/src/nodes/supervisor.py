@@ -5,6 +5,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 from ..state import AgentState
+from ..utils import get_auth_user
 
 model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
 
@@ -55,8 +56,8 @@ Respond with ONLY ONE of: customer_agent, employee_agent, recommendation_agent, 
 async def supervisor_node(state: AgentState, config: RunnableConfig) -> Command:
     """Route to appropriate agent based on user role and intent."""
 
-    # Get auth context
-    auth_user = config.get("configurable", {}).get("langgraph_auth_user", {})
+    # Get auth context (checks multiple sources)
+    auth_user = await get_auth_user(config)
     role = auth_user.get("role", "customer")
     user_name = auth_user.get("name", "User")
 
