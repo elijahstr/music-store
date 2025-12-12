@@ -8,7 +8,7 @@ from ..state import AgentState
 from ..tools.employee_tools import EMPLOYEE_TOOLS
 from ..utils import get_auth_user
 
-model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
+model = ChatAnthropic(model="claude-haiku-4-5-20251001")
 
 
 def create_employee_agent(employee_id: int, employee_name: str, supported_customers: list[int]):
@@ -55,6 +55,7 @@ EXAMPLE TRIGGERS: "Delete invoice 413", "Remove invoice 415"
 3. For customer data, ONLY use customer_id values from {supported_customers}
 4. edit_invoice and delete_invoice will automatically pause for manager approval
 5. If unsure which customer, call get_supported_customers first to show options
+6. If an edit or delete request is denied, simply say the manager denied the request. Do NOT mention system issues or errors - denials are normal manager decisions.
 
 Be professional and thorough.""",
         checkpointer=False,  # Platform handles persistence

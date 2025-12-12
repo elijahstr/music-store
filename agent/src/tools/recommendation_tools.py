@@ -134,43 +134,76 @@ def get_artist_recommendations(customer_id: int) -> str:
 
 
 @tool
-def get_popular_tracks_in_genre(genre_name: str) -> str:
+def get_popular_tracks_in_genre(genre_name: str, customer_id: int = None) -> str:
     """
     Get the most popular (best-selling) tracks in a specific genre.
+    Excludes tracks the customer already owns if customer_id is provided.
 
     Args:
         genre_name: Name of the genre (e.g., "Rock", "Jazz", "Metal")
+        customer_id: Optional customer ID to exclude already-owned tracks
 
     Returns:
-        Top 10 best-selling tracks in that genre
+        Top 10 best-selling tracks in that genre (excluding owned tracks)
     """
     with get_db() as conn:
-        cur = conn.execute("""
-            SELECT
-                t.Name as Track,
-                ar.Name as Artist,
-                al.Title as Album,
-                t.UnitPrice,
-                COUNT(ii.InvoiceLineId) as TimesSold
-            FROM tracks t
-            JOIN albums al ON t.AlbumId = al.AlbumId
-            JOIN artists ar ON al.ArtistId = ar.ArtistId
-            JOIN genres g ON t.GenreId = g.GenreId
-            LEFT JOIN invoice_items ii ON t.TrackId = ii.TrackId
-            WHERE LOWER(g.Name) LIKE LOWER(?)
-            GROUP BY t.TrackId
-            ORDER BY TimesSold DESC, t.Name
-            LIMIT 10
-        """, (f"%{genre_name}%",))
+        if customer_id:
+            # Exclude tracks the customer already owns
+            cur = conn.execute("""
+                SELECT
+                    t.TrackId,
+                    t.Name as Track,
+                    ar.Name as Artist,
+                    al.Title as Album,
+                    t.UnitPrice,
+                    COUNT(ii.InvoiceLineId) as TimesSold
+                FROM tracks t
+                JOIN albums al ON t.AlbumId = al.AlbumId
+                JOIN artists ar ON al.ArtistId = ar.ArtistId
+                JOIN genres g ON t.GenreId = g.GenreId
+                LEFT JOIN invoice_items ii ON t.TrackId = ii.TrackId
+                WHERE LOWER(g.Name) LIKE LOWER(?)
+                AND t.TrackId NOT IN (
+                    SELECT ii2.TrackId
+                    FROM invoice_items ii2
+                    JOIN invoices inv ON ii2.InvoiceId = inv.InvoiceId
+                    WHERE inv.CustomerId = ?
+                )
+                GROUP BY t.TrackId
+                ORDER BY TimesSold DESC, t.Name
+                LIMIT 10
+            """, (f"%{genre_name}%", customer_id))
+        else:
+            cur = conn.execute("""
+                SELECT
+                    t.TrackId,
+                    t.Name as Track,
+                    ar.Name as Artist,
+                    al.Title as Album,
+                    t.UnitPrice,
+                    COUNT(ii.InvoiceLineId) as TimesSold
+                FROM tracks t
+                JOIN albums al ON t.AlbumId = al.AlbumId
+                JOIN artists ar ON al.ArtistId = ar.ArtistId
+                JOIN genres g ON t.GenreId = g.GenreId
+                LEFT JOIN invoice_items ii ON t.TrackId = ii.TrackId
+                WHERE LOWER(g.Name) LIKE LOWER(?)
+                GROUP BY t.TrackId
+                ORDER BY TimesSold DESC, t.Name
+                LIMIT 10
+            """, (f"%{genre_name}%",))
         rows = cur.fetchall()
 
     if not rows:
         return f"No tracks found in genre matching '{genre_name}'. Try: Rock, Jazz, Metal, Pop, Blues, etc."
 
-    lines = [f"Top tracks in {genre_name}:\n"]
+    header = f"Top tracks in {genre_name}"
+    if customer_id:
+        header += " (excluding tracks you own)"
+    lines = [f"{header}:\n"]
     for r in rows:
         sold_text = f"({r['TimesSold']} sold)" if r['TimesSold'] > 0 else "(new)"
-        lines.append(f"• \"{r['Track']}\" by {r['Artist']} - ${r['UnitPrice']:.2f} {sold_text}")
+        lines.append(f"• TrackId {r['TrackId']}: \"{r['Track']}\" by {r['Artist']} - ${r['UnitPrice']:.2f} {sold_text}")
 
     return "\n".join(lines)
 

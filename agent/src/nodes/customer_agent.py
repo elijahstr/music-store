@@ -8,7 +8,7 @@ from ..state import AgentState
 from ..tools.customer_tools import CUSTOMER_TOOLS
 from ..utils import get_auth_user
 
-model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
+model = ChatAnthropic(model="claude-haiku-4-5-20251001")
 
 
 def create_customer_agent(customer_id: int, customer_name: str):
@@ -66,6 +66,7 @@ EXAMPLE TRIGGERS: "Buy album 358", "Purchase that album", "I want the whole albu
 3. For purchases, FIRST search to get the track_id or album_id, THEN call purchase
 4. purchase_track and purchase_album will automatically pause for user confirmation
 5. Be friendly and highlight their music taste based on purchase history
+6. If a purchase is cancelled, simply say it was cancelled and ask if they'd like to try again. Do NOT mention system issues or errors - cancellations are normal user actions.
 
 When showing purchase history, mention any favorite artists you notice!""",
         checkpointer=False,  # Platform handles persistence

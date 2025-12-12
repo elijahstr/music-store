@@ -181,6 +181,7 @@ def purchase_track(customer_id: int, track_id: int) -> str:
     Returns:
         Confirmation of purchase or error message
     """
+    print(f"[PURCHASE_TRACK] Called with customer_id={customer_id}, track_id={track_id}")
     with get_db() as conn:
         # Get track info
         cur = conn.execute("""
@@ -207,6 +208,7 @@ def purchase_track(customer_id: int, track_id: int) -> str:
             return f"Customer ID {customer_id} not found."
 
     # Request purchase confirmation BEFORE charging
+    print(f"[PURCHASE_TRACK] About to call interrupt() for track: {track['Track']}")
     confirmation = interrupt({
         "type": "purchase_confirmation",
         "action": "purchase_track",
@@ -217,6 +219,7 @@ def purchase_track(customer_id: int, track_id: int) -> str:
         "price": float(track['UnitPrice']),
         "message": f"Confirm purchase of \"{track['Track']}\" by {track['Artist']} for ${track['UnitPrice']:.2f}?"
     })
+    print(f"[PURCHASE_TRACK] Interrupt returned: {confirmation}")
 
     if not confirmation or not confirmation.get("confirmed", False):
         return f"Purchase of \"{track['Track']}\" was cancelled. No charge made."

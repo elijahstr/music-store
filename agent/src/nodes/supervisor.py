@@ -7,7 +7,10 @@ from langgraph.types import Command
 from ..state import AgentState
 from ..utils import get_auth_user
 
-model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
+model = ChatAnthropic(model="claude-haiku-4-5-20251001")
+
+# Maximum supervisor invocations before forcing exit (prevents infinite loops)
+MAX_SUPERVISOR_TURNS = 2
 
 ROUTING_PROMPT = """You are a supervisor routing requests for a music store assistant system.
 
@@ -38,23 +41,40 @@ Route here when user asks about:
 - Discovering new artists ("similar artists", "who else would I like")
 - Popular tracks in genres ("top rock songs", "popular jazz tracks")
 
-### FINISH
+### FINISH (PREFER THIS)
 Output FINISH when:
-- An agent has already provided a complete answer (check recent AI messages)
-- The user just said hello/thanks (simple greetings)
-- The request was fully handled in previous messages
+- An agent has already provided ANY substantive response (check recent AI messages)
+- The user just said hello/thanks/goodbye (simple greetings)
+- The request was handled in previous messages
+- An agent returned data or answered the question - DO NOT re-route unnecessarily
 
 ## ROUTING RULES
 1. Customers can ONLY use: customer_agent, recommendation_agent
 2. Employees can ONLY use: employee_agent, recommendation_agent
-3. Check if recent messages already contain a complete answer -> FINISH
-4. When in doubt, route to the role's primary agent (customer_agent or employee_agent)
+3. **IMPORTANT**: If an agent just responded with data or an answer, output FINISH immediately
+4. Only route to another agent if the user's request was NOT addressed
+5. Prefer FINISH over unnecessary agent calls - minimize latency
 
 Respond with ONLY ONE of: customer_agent, employee_agent, recommendation_agent, FINISH"""
 
 
 async def supervisor_node(state: AgentState, config: RunnableConfig) -> Command:
     """Route to appropriate agent based on user role and intent."""
+
+    # Track supervisor invocations to prevent infinite loops
+    # Reset counter if last message is from human (new user request)
+    last_msg = state["messages"][-1] if state["messages"] else None
+    is_new_request = (
+        last_msg and
+        (getattr(last_msg, "type", None) == "human" or
+         (isinstance(last_msg, dict) and last_msg.get("role") == "human"))
+    )
+
+    current_turns = 0 if is_new_request else state.get("supervisor_turns", 0)
+
+    # Force exit if we've hit max turns for this request
+    if current_turns >= MAX_SUPERVISOR_TURNS:
+        return Command(goto="__end__", update={"supervisor_turns": 0})
 
     # Get auth context (checks multiple sources)
     auth_user = await get_auth_user(config)
@@ -106,7 +126,10 @@ async def supervisor_node(state: AgentState, config: RunnableConfig) -> Command:
         # Default to the primary agent for the role
         next_agent = "customer_agent" if role == "customer" else "employee_agent"
 
-    if next_agent == "finish":
-        return Command(goto="__end__")
+    # Increment turn counter for next invocation
+    new_turns = current_turns + 1
 
-    return Command(goto=next_agent)
+    if next_agent == "finish":
+        return Command(goto="__end__", update={"supervisor_turns": new_turns})
+
+    return Command(goto=next_agent, update={"supervisor_turns": new_turns})
