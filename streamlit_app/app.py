@@ -87,6 +87,27 @@ st.markdown("""
         color: white !important;
     }
 
+    /* Secondary buttons (like Logout) - slate gray with white text */
+    .stButton > button[kind="secondary"] {
+        background-color: #64748b !important;
+        border: 1px solid #475569 !important;
+    }
+
+    .stButton > button[kind="secondary"] p,
+    .stButton > button[kind="secondary"] span {
+        color: #ffffff !important;
+        background-color: transparent !important;
+    }
+
+    .stButton > button[kind="secondary"]:hover {
+        background-color: #475569 !important;
+    }
+
+    .stButton > button[kind="secondary"]:hover p,
+    .stButton > button[kind="secondary"]:hover span {
+        color: #ffffff !important;
+    }
+
     /* Form submit button */
     .stFormSubmitButton > button {
         background-color: #2F6868 !important;
@@ -224,14 +245,38 @@ st.markdown("""
         background-color: #ffffff !important;
     }
 
-    /* Bottom chat input area */
+    /* Bottom chat input area - make entire footer light gray */
     [data-testid="stBottom"] {
         background-color: #f4f6f6 !important;
         border-top: 1px solid #84C4C0 !important;
         padding-top: 1rem !important;
     }
 
+    [data-testid="stBottom"] > div {
+        background-color: #f4f6f6 !important;
+    }
+
     [data-testid="stBottomBlockContainer"] {
+        background-color: #f4f6f6 !important;
+    }
+
+    /* Remove white boxes around chat input in footer */
+    [data-testid="stBottom"] [data-testid="stHorizontalBlock"],
+    [data-testid="stBottom"] [data-testid="stVerticalBlock"],
+    [data-testid="stBottom"] [data-testid="column"],
+    [data-testid="stBottom"] .stChatInputContainer,
+    [data-testid="stBottom"] [data-testid="stChatInputContainer"],
+    [data-testid="stBottom"] > div > div,
+    [data-testid="stBottom"] .element-container {
+        background-color: #f4f6f6 !important;
+    }
+
+    /* Ensure chat input wrapper in footer is also styled */
+    .stChatFloatingInputContainer {
+        background-color: #f4f6f6 !important;
+    }
+
+    [data-testid="stChatFloatingInputContainer"] {
         background-color: #f4f6f6 !important;
     }
 
@@ -283,6 +328,29 @@ st.markdown("""
         border: 1px solid #84C4C0 !important;
     }
 
+    /* Hide "Enter" instruction hints in form inputs */
+    .stTextInput div[data-testid="InputInstructions"] {
+        display: none !important;
+    }
+
+    /* Make password input same width as username */
+    /* Hide the password visibility toggle button (eye icon) */
+    [data-testid="stForm"] button[title="Show password"],
+    [data-testid="stForm"] button[title="Hide password"],
+    [data-testid="stForm"] [data-testid="stTextInput"] button,
+    [data-testid="stForm"] .stTextInput button {
+        display: none !important;
+        visibility: hidden !important;
+        width: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    /* Remove the 14px padding-right reserved for eye button on password field */
+    [data-testid="stTextInputRootElement"]:has(input[type="password"]) {
+        padding-right: 0 !important;
+    }
+
     /* Markdown text blocks */
     [data-testid="stMarkdownContainer"] p {
         color: #1C3C3C !important;
@@ -307,6 +375,10 @@ if "authenticated" not in st.session_state:
 if "pending_interrupt" not in st.session_state:
     st.session_state.pending_interrupt = None
 
+# Always ensure pending_prompt exists
+if "pending_prompt" not in st.session_state:
+    st.session_state.pending_prompt = None
+
 
 def authenticate(username: str, password: str) -> bool:
     """Validate username and password."""
@@ -330,7 +402,7 @@ def login_page():
     # Top accent bar
     st.markdown('<div class="top-accent-bar"></div>', unsafe_allow_html=True)
 
-    st.title("🎵 The Music Company Of San Francisco")
+    st.title("The Music Company Of San Francisco")
     st.subheader("Please log in to continue")
 
     with st.form("login_form"):
@@ -360,7 +432,6 @@ def login_page():
     with col3:
         st.markdown("**julia**")
         st.caption("Employee")
-    st.caption("Password for all: `demo123`")
 
 
 def get_client():
@@ -486,13 +557,16 @@ def chat_page():
     """, height=0)
 
     # Header with user info and logout
-    col1, col2 = st.columns([3, 1])
+    col1, col2 = st.columns([5, 1])
     with col1:
-        st.title("🎵 The Music Company Of San Francisco")
+        st.title("The Music Company Of San Francisco")
     with col2:
-        if st.button("Logout", use_container_width=True):
+        # Use a container div to identify logout button for CSS
+        st.markdown('<div id="logout-btn-wrapper">', unsafe_allow_html=True)
+        if st.button("Logout", use_container_width=True, key="logout_btn", type="secondary"):
             logout()
             st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
     # User info bar with custom badge
     role_class = "role-badge-employee" if user_info["role"] == "employee" else "role-badge-customer"
@@ -596,12 +670,10 @@ def chat_page():
         # Don't show chat input while interrupt is pending
         return
 
-    # Chat input
-    if prompt := st.chat_input("Ask about music, orders, or recommendations..."):
-        # Add user message to chat
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+    # Check if we have a pending prompt to process
+    if "pending_prompt" in st.session_state and st.session_state.pending_prompt:
+        prompt = st.session_state.pending_prompt
+        st.session_state.pending_prompt = None
 
         # Get assistant response
         with st.chat_message("assistant"):
@@ -615,8 +687,8 @@ def chat_page():
                     st.session_state.pending_interrupt = interrupt_data
                     st.rerun()
                 elif response:
-                    st.markdown(response)
                     st.session_state.messages.append({"role": "assistant", "content": response})
+                    st.rerun()
                 else:
                     st.warning("No response received from the assistant.")
 
@@ -626,6 +698,13 @@ def chat_page():
                 st.caption("Make sure the LangGraph backend is running on port 8123")
                 import traceback
                 st.code(traceback.format_exc())
+
+    # Chat input
+    if prompt := st.chat_input("Ask about music, orders, or recommendations..."):
+        # Add user message to chat and set pending prompt
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        st.session_state.pending_prompt = prompt
+        st.rerun()
 
 
 # Main routing
