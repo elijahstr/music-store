@@ -7,5 +7,10 @@
   "auth": {
     "path": "src.auth:auth"
   },
+  "http": {
+    "configurable_headers": {
+      "includes": ["authorization", "x-*"]
+    }
+  },
   "env": ".env"
 }

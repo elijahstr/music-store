@@ -6,6 +6,7 @@ from langgraph.prebuilt import create_react_agent
 from langgraph.types import Command
 from ..state import AgentState
 from ..tools.customer_tools import CUSTOMER_TOOLS
+from ..utils import get_auth_user
 
 model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
 
@@ -74,8 +75,8 @@ When showing purchase history, mention any favorite artists you notice!""",
 async def customer_agent_node(state: AgentState, config: RunnableConfig) -> Command:
     """Customer agent node function."""
 
-    # Get auth context
-    auth_user = config.get("configurable", {}).get("langgraph_auth_user", {})
+    # Get auth context (checks multiple sources)
+    auth_user = await get_auth_user(config)
     customer_id = auth_user.get("customer_id")
     customer_name = auth_user.get("name", "Customer")
 

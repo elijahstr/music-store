@@ -67,6 +67,9 @@ async def authenticate(authorization: str | None) -> Auth.types.MinimalUserDict:
     For this demo, token is the user's first name (julia, jake, neil).
     In production, this would validate a real JWT/session token.
     """
+    # Debug: log what we receive
+    print(f"[AUTH DEBUG] Received authorization: {authorization!r}")
+
     # Allow Studio access in dev mode (no authorization provided)
     if not authorization:
         # Return a default employee user for Studio/dev access

@@ -6,6 +6,7 @@ from langgraph.prebuilt import create_react_agent
 from langgraph.types import Command
 from ..state import AgentState
 from ..tools.employee_tools import EMPLOYEE_TOOLS
+from ..utils import get_auth_user
 
 model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
 
@@ -66,8 +67,8 @@ async def employee_agent_node(state: AgentState, config: RunnableConfig) -> Comm
     HITL is handled inside the tools themselves via interrupt().
     """
 
-    # Get auth context
-    auth_user = config.get("configurable", {}).get("langgraph_auth_user", {})
+    # Get auth context (checks multiple sources)
+    auth_user = await get_auth_user(config)
     employee_id = auth_user.get("employee_id")
     employee_name = auth_user.get("name", "Employee")
     supported_customers = auth_user.get("supported_customers", [])
