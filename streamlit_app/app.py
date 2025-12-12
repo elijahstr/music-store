@@ -5,6 +5,7 @@ A simple chat interface for the LangGraph-powered music store assistant.
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 from langgraph_sdk import get_sync_client
 
 # Configuration
@@ -302,6 +303,10 @@ if "authenticated" not in st.session_state:
     st.session_state.messages = []
     st.session_state.thread_id = None
 
+# Always ensure pending_interrupt exists (for existing sessions after code update)
+if "pending_interrupt" not in st.session_state:
+    st.session_state.pending_interrupt = None
+
 
 def authenticate(username: str, password: str) -> bool:
     """Validate username and password."""
@@ -317,6 +322,7 @@ def logout():
     st.session_state.current_user = None
     st.session_state.messages = []
     st.session_state.thread_id = None
+    st.session_state.pending_interrupt = None
 
 
 def login_page():
@@ -365,8 +371,18 @@ def get_client():
     )
 
 
-def stream_response_with_status(user_message: str, status_container):
-    """Stream response from LangGraph backend with live status updates."""
+def stream_response_with_status(user_message: str, status_container, is_resume: bool = False, resume_value: dict = None):
+    """Stream response from LangGraph backend with live status updates.
+
+    Args:
+        user_message: The user's message (ignored if is_resume=True)
+        status_container: Streamlit status container for updates
+        is_resume: If True, resume from an interrupt instead of sending new message
+        resume_value: The value to send when resuming (e.g., {"confirmed": True})
+
+    Returns:
+        Tuple of (final_response, interrupt_data) where interrupt_data is None if no interrupt
+    """
     client = get_client()
 
     # Create a thread if we don't have one
@@ -375,19 +391,45 @@ def stream_response_with_status(user_message: str, status_container):
         st.session_state.thread_id = thread["thread_id"]
 
     final_response = ""
+    interrupt_data = None
 
-    for chunk in client.runs.stream(
-        thread_id=st.session_state.thread_id,
-        assistant_id=ASSISTANT_ID,
-        input={"messages": [{"role": "user", "content": user_message}]},
-        stream_mode=["values", "updates"],
-    ):
+    # Either resume or start new run
+    if is_resume and resume_value is not None:
+        stream = client.runs.stream(
+            thread_id=st.session_state.thread_id,
+            assistant_id=ASSISTANT_ID,
+            input=None,
+            command={"resume": resume_value},
+            stream_mode=["values", "updates"],
+        )
+    else:
+        stream = client.runs.stream(
+            thread_id=st.session_state.thread_id,
+            assistant_id=ASSISTANT_ID,
+            input={"messages": [{"role": "user", "content": user_message}]},
+            stream_mode=["values", "updates"],
+        )
+
+    for chunk in stream:
         # Show which node is running
         if chunk.event == "updates":
             if isinstance(chunk.data, dict):
-                for node_name in chunk.data.keys():
-                    if node_name != "__metadata__":
-                        status_container.update(label=f"Running: {node_name}...", state="running")
+                # Check for interrupt in updates
+                if "__interrupt__" in chunk.data:
+                    interrupt_info = chunk.data["__interrupt__"]
+                    if interrupt_info and len(interrupt_info) > 0:
+                        # Extract the interrupt value
+                        interrupt_obj = interrupt_info[0]
+                        if hasattr(interrupt_obj, "value"):
+                            interrupt_data = interrupt_obj.value
+                        elif isinstance(interrupt_obj, dict):
+                            interrupt_data = interrupt_obj.get("value", interrupt_obj)
+                        else:
+                            interrupt_data = interrupt_obj
+                else:
+                    for node_name in chunk.data.keys():
+                        if node_name != "__metadata__":
+                            status_container.update(label=f"Running: {node_name}...", state="running")
 
         # Extract response from values
         if chunk.event == "values":
@@ -415,7 +457,7 @@ def stream_response_with_status(user_message: str, status_container):
                 if msg_type == "ai" and content:
                     final_response = content
 
-    return final_response
+    return final_response, interrupt_data
 
 
 def chat_page():
@@ -424,6 +466,24 @@ def chat_page():
 
     # Top accent bar
     st.markdown('<div class="top-accent-bar"></div>', unsafe_allow_html=True)
+
+    # Auto-focus chat input on page load
+    components.html("""
+    <script>
+        // Focus on chat input in parent Streamlit frame
+        const focusChatInput = () => {
+            const chatInput = window.parent.document.querySelector('[data-testid="stChatInput"] textarea');
+            if (chatInput) {
+                chatInput.focus();
+            }
+        };
+        // Try multiple times to account for Streamlit's async rendering
+        focusChatInput();
+        setTimeout(focusChatInput, 100);
+        setTimeout(focusChatInput, 300);
+        setTimeout(focusChatInput, 500);
+    </script>
+    """, height=0)
 
     # Header with user info and logout
     col1, col2 = st.columns([3, 1])
@@ -465,6 +525,77 @@ def chat_page():
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
+    # Handle pending interrupt (confirmation dialog)
+    if st.session_state.pending_interrupt:
+        interrupt = st.session_state.pending_interrupt
+        msg = interrupt.get("message", "Please confirm this action.")
+        interrupt_type = interrupt.get("type", "confirmation")
+
+        # Determine the right response key based on interrupt type
+        # Employee tools use "approved", customer tools use "confirmed"
+        is_manager_approval = interrupt_type == "manager_approval"
+        confirm_key = "approved" if is_manager_approval else "confirmed"
+
+        # Add anchor and auto-scroll to confirmation dialog
+        st.markdown('<div id="interrupt-dialog"></div>', unsafe_allow_html=True)
+        components.html("""
+        <script>
+            // Scroll to the interrupt dialog
+            const scrollToDialog = () => {
+                const dialog = window.parent.document.getElementById('interrupt-dialog');
+                if (dialog) {
+                    dialog.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            };
+            setTimeout(scrollToDialog, 100);
+            setTimeout(scrollToDialog, 300);
+        </script>
+        """, height=0)
+
+        with st.chat_message("assistant"):
+            title = "Manager Approval Required" if is_manager_approval else "Confirmation Required"
+            st.warning(f"**{title}**\n\n{msg}")
+
+            col1, col2 = st.columns(2)
+            with col1:
+                btn_label = "✓ Approve" if is_manager_approval else "✓ Confirm"
+                if st.button(btn_label, use_container_width=True, type="primary"):
+                    st.session_state.pending_interrupt = None
+                    with st.status("Processing...", expanded=True) as status:
+                        response, new_interrupt = stream_response_with_status(
+                            "", status, is_resume=True, resume_value={confirm_key: True}
+                        )
+                        status.update(label="Complete!", state="complete", expanded=False)
+
+                    if new_interrupt:
+                        st.session_state.pending_interrupt = new_interrupt
+                    elif response:
+                        st.session_state.messages.append({"role": "assistant", "content": response})
+                    st.rerun()
+
+            with col2:
+                btn_label = "✗ Deny" if is_manager_approval else "✗ Cancel"
+                if st.button(btn_label, use_container_width=True):
+                    # Store interrupt info for denial message before clearing
+                    denied_action = interrupt.get("action", "action")
+                    st.session_state.pending_interrupt = None
+                    with st.status("Cancelling...", expanded=True) as status:
+                        response, new_interrupt = stream_response_with_status(
+                            "", status, is_resume=True, resume_value={confirm_key: False}
+                        )
+                        status.update(label="Cancelled", state="complete", expanded=False)
+
+                    # Use backend response if available, otherwise show denial acknowledgement
+                    if response:
+                        st.session_state.messages.append({"role": "assistant", "content": response})
+                    else:
+                        denial_msg = "Request denied." if is_manager_approval else "Action cancelled."
+                        st.session_state.messages.append({"role": "assistant", "content": denial_msg})
+                    st.rerun()
+
+        # Don't show chat input while interrupt is pending
+        return
+
     # Chat input
     if prompt := st.chat_input("Ask about music, orders, or recommendations..."):
         # Add user message to chat
@@ -476,10 +607,14 @@ def chat_page():
         with st.chat_message("assistant"):
             try:
                 with st.status("Processing...", expanded=True) as status:
-                    response = stream_response_with_status(prompt, status)
+                    response, interrupt_data = stream_response_with_status(prompt, status)
                     status.update(label="Complete!", state="complete", expanded=False)
 
-                if response:
+                if interrupt_data:
+                    # Store interrupt and show confirmation UI
+                    st.session_state.pending_interrupt = interrupt_data
+                    st.rerun()
+                elif response:
                     st.markdown(response)
                     st.session_state.messages.append({"role": "assistant", "content": response})
                 else:

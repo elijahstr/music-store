@@ -7,7 +7,7 @@ from langgraph.types import Command
 from ..state import AgentState
 from ..tools.recommendation_tools import RECOMMENDATION_TOOLS
 
-model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
+model = ChatAnthropic(model="claude-haiku-4-5-20251001")
 
 
 def create_recommendation_agent(user_id: int, user_name: str, is_employee: bool):
@@ -44,10 +44,13 @@ USE WHEN: User wants to discover new artists similar to ones they already like.
 CALL WITH: customer_id={customer_id_rule}
 EXAMPLE TRIGGERS: "Show me similar artists", "Who else would I like?", "Artists like Taylor Swift"
 
-### 3. get_popular_tracks_in_genre(genre_name: str)
+### 3. get_popular_tracks_in_genre(genre_name: str, customer_id: int = None)
 USE WHEN: User wants to explore best-selling tracks in a specific genre.
-PARAMETER: genre_name is the genre (Rock, Jazz, Pop, Metal, Blues, etc.)
+PARAMETERS:
+  - genre_name: the genre (Rock, Jazz, Pop, Metal, Blues, etc.)
+  - customer_id: pass {customer_id_rule} to exclude tracks they already own
 EXAMPLE TRIGGERS: "What's popular in Jazz?", "Top rock songs", "Best-selling metal tracks"
+ALWAYS pass customer_id to exclude already-owned tracks from results!
 
 ## CRITICAL RULES
 1. ALWAYS use a tool when the user's request matches a tool's purpose

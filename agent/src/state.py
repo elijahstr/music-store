@@ -15,3 +15,6 @@ class AgentState(MessagesState):
 
     # Routing
     next_agent: Optional[str]
+
+    # Turn tracking for latency control
+    supervisor_turns: int  # Counts supervisor invocations, forces exit after MAX_TURNS
